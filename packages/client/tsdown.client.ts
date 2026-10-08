@@ -30,6 +30,32 @@ const INLINE_CSS_VIRTUAL_PREFIX = '\0dsh-inline-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 const INLINE_CSS_QUERY = '?inline'
 
+/**
+ * Style-tag identity of one stylesheet: its path below `src/`, forward-slashed.
+ *
+ * Not its basename. The injector below guards on this id with a `querySelector`,
+ * so two stylesheets that share an id are mutually exclusive: the first one to
+ * run appends its tag, and every later one finds that tag already in the
+ * document and skips itself — its CSS is compiled into the artifact and never
+ * applies, with no error anywhere. A shared basename is not hypothetical once a
+ * package has a stylesheet per directory. The yon-panel plugin shipped that way
+ * until 2026-10-08 (nine of its eleven stylesheets were `panel.module.css`;
+ * eight panels rendered half-styled inside a real host, which is where a user
+ * finally saw it), and it did not go wrong here only because no workspace
+ * package happens to name two stylesheets alike today.
+ *
+ * A path outside the package sources keeps the basename: the id must not embed a
+ * machine-specific absolute path, since the artifact is committed.
+ * @param id - package name as spelled at the preset call site.
+ * @param fileId - absolute path of the stylesheet being loaded.
+ * @returns an id unique per stylesheet within the package.
+ */
+function stylesheetTagId(id: string, fileId: string): string {
+  const boundary = fileId.lastIndexOf(SOURCE_MARKER)
+  const local = boundary < 0 ? basename(fileId) : fileId.slice(boundary + SOURCE_MARKER.length)
+  return `${id}/${local.split(sep).join('/')}`
+}
+
 /** Emit one plugin-owned style injector and an optional CSS Modules export. */
 function styleInjectionModule(
   id: string,
@@ -39,7 +65,7 @@ function styleInjectionModule(
 ): string {
   const source = [
     `const css = ${JSON.stringify(css)};`,
-    `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
+    `const tagId = ${JSON.stringify(stylesheetTagId(id, fileId))};`,
     'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
     '  const tag = document.createElement(\'style\');',
     `  tag.dataset.plugin = ${JSON.stringify(id)};`,
